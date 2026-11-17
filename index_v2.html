@@ -125,7 +125,7 @@
       <div>
         <div class="flex items-center gap-1.5">
           <h1 class="text-base font-bold tracking-wider text-white">凯莉 · KYLIE</h1>
-          <span class="mono text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-400/25">v2.6</span>
+          <span class="mono text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-400/25">v2.7</span>
         </div>
         <p id="subStatusText" class="mono text-[11px] text-slate-400 tracking-wide">HERMES NEURAL LINK // READY</p>
       </div>
@@ -180,14 +180,14 @@
   <!-- 底部赛博触控台 -->
   <footer class="w-full max-w-md mx-auto flex flex-col items-center z-10">
     <div class="w-full flex items-center justify-around px-2">
-      <!-- 左侧：连续对话开关 -->
+      <!-- 左侧：暂停/继续 播放控制 -->
       <button id="autoModeBtn" type="button" class="flex flex-col items-center gap-1.5 text-slate-400 hover:text-cyan-300 transition active:scale-95">
         <div id="autoModeIcon" class="w-11 h-11 rounded-full hud-glass flex items-center justify-center border border-white/10">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-<path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          <svg id="autoModeSvg" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path id="autoModePath" stroke-linecap="round" stroke-linejoin="round" d="M10 4H6a2 2 0 00-2 2v12a2 2 0 002 2h4a2 2 0 002-2V6a2 2 0 00-2-2zM18 4h-4a2 2 0 00-2 2v12a2 2 0 002 2h4a2 2 0 002-2V6a2 2 0 00-2-2z" />
           </svg>
         </div>
-        <span class="text-[11px] tracking-wider">免提连麦</span>
+        <span id="autoModeLabel" class="text-[11px] tracking-wider">暂停</span>
       </button>
 
       <!-- 中央：按住说话主按钮 -->
@@ -330,6 +330,20 @@
     let isAutoMode = false;
     let demoTimer = null;
 
+    // 暂停/继续 播放控制状态
+    let currentAudio = null;
+    let isPaused = false;
+    const PAUSE_PATH = 'M10 4H6a2 2 0 00-2 2v12a2 2 0 002 2h4a2 2 0 002-2V6a2 2 0 00-2-2zM18 4h-4a2 2 0 00-2 2v12a2 2 0 002 2h4a2 2 0 002-2V6a2 2 0 00-2-2z';
+    const PLAY_PATH = 'M8 5v14l11-7z';
+    function setPauseBtn(paused) {
+      const p = document.getElementById('autoModePath');
+      const l = document.getElementById('autoModeLabel');
+      if (p) p.setAttribute('d', paused ? PLAY_PATH : PAUSE_PATH);
+      if (l) l.textContent = paused ? '继续' : '暂停';
+      autoModeIcon.classList.toggle('border-cyan-400', paused);
+      autoModeIcon.classList.toggle('text-cyan-300', paused);
+    }
+
     // 外部可调用的状态切换方法
     function setState(newState) {
       appState = newState;
@@ -443,9 +457,11 @@
         let playing = false;
         function playNext() {
           const url = audioQueue.shift();
-          if (!url) { playing = false; setState('idle'); return; }
+          if (!url) { playing = false; currentAudio = null; isPaused = false; setPauseBtn(false); setState('idle'); return; }
           playing = true;
           const audio = new Audio(url);
+          currentAudio = audio;
+          isPaused = false;
           audio.onended = () => playNext();
           audio.onerror = () => playNext();
           audio.play().catch(() => {
@@ -523,15 +539,22 @@
 
     // 连续对话模式切换
     autoModeBtn.addEventListener('click', () => {
-      isAutoMode = !isAutoMode;
-      if (isAutoMode) {
-        autoModeIcon.classList.add('border-cyan-400', 'text-cyan-300', 'bg-cyan-500/15');
-        setTranscript('已开启「免提连麦」模式，可直接连续语音对话。');
-      } else {
-        autoModeIcon.classList.remove('border-cyan-400', 'text-cyan-300', 'bg-cyan-500/15');
-        setTranscript('已切回「按住说话」精准触控模式。');
+      if (!currentAudio) {
+        setTranscript('凯莉没在说话，按住下方主按钮开始对话。');
+        return;
       }
-      if (appState === 'idle') setState('idle');
+      if (!isPaused) {
+        try { currentAudio.pause(); } catch(e) {}
+        isPaused = true;
+        setPauseBtn(true);
+        setTranscript('已暂停，点「继续」接着听。');
+      } else {
+        try { currentAudio.play(); } catch(e) {}
+        isPaused = false;
+        setPauseBtn(false);
+        setTranscript('继续播放。');
+      }
+      if (navigator.vibrate) navigator.vibrate(10);
     });
 
     // 清空记录
