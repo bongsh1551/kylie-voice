@@ -434,14 +434,56 @@
       try {
         const t0 = performance.now();
         const res = await fetch(API + '/voice', {method:'POST', body:fd});
-        const data = await res.json();
-        const dt = performance.now() - t0;
+        if (!res.ok) { const d = await res.json().catch(()=>({})); throw new Error(d.error || 'HTTP ' + res.status); }
         const badge = document.getElementById('latencyBadge');
-        if (badge) badge.textContent = dt < 1000 ? Math.round(dt) + ' ms' : (dt/1000).toFixed(1) + ' s';
-        if (data.error) { setTranscript('⚠️ ' + data.error); setState('idle'); return; }
-        setTranscript(data.reply, true);
-        setState('speaking');
-        playAudio(API + data.audio_url);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '', fullText = '', firstAt = null;
+        const audioQueue = [];
+        let playing = false;
+        function playNext() {
+          const url = audioQueue.shift();
+          if (!url) { playing = false; setState('idle'); return; }
+          playing = true;
+          const audio = new Audio(url);
+          audio.onended = () => playNext();
+          audio.onerror = () => playNext();
+          audio.play().catch(() => {
+            setTranscript('点一下屏幕播放语音');
+            const tap = () => { audio.play(); document.removeEventListener('touchstart', tap); };
+            document.addEventListener('touchstart', tap, {once:true});
+          });
+        }
+        while (true) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, {stream:true});
+          let i;
+          while ((i = buffer.indexOf('\n\n')) !== -1) {
+            const frame = buffer.slice(0, i);
+            buffer = buffer.slice(i + 2);
+            for (const line of frame.split('\n')) {
+              if (!line.startsWith('data: ')) continue;
+              try {
+                const obj = JSON.parse(line.slice(6));
+                if (obj.done) {
+                  const dt = performance.now() - t0;
+                  if (badge) badge.textContent = dt < 1000 ? Math.round(dt) + ' ms' : (dt/1000).toFixed(1) + ' s';
+                } else if (obj.audio_url) {
+                  if (!firstAt) firstAt = performance.now() - t0;
+                  fullText += obj.text || '';
+                  setTranscript(fullText);
+                  setState('speaking');
+                  audioQueue.push(API + obj.audio_url);
+                  if (!playing) playNext();
+                } else if (obj.error) {
+                  setTranscript('⚠️ ' + obj.error);
+                  setState('idle');
+                }
+              } catch(e) {}
+            }
+          }
+        }
       } catch(e) {
         setTranscript('连接失败：' + e.message);
         setState('idle');
