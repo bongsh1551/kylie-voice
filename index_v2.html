@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>凯莉 · 神经语音终端</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#04070f">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-deep: #04070f;
+      --cyan: #00f0ff;
+      --magenta: #ff2a7a;
+      --violet: #8b5cf6;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-deep);
+      color: #f8fafc;
+      font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+      height: 100dvh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background-image:
+        radial-gradient(circle at 50% 38%, rgba(0, 240, 255, 0.08) 0%, transparent 55%),
+        radial-gradient(circle at 80% 85%, rgba(255, 42, 122, 0.06) 0%, transparent 45%),
+        linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* 顶部状态呼吸灯 */
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+    .status-dot {
+      animation: pulse-dot 2s infinite ease-in-out;
+    }
+
+    /* 外圈全息虚线旋转 */
+    @keyframes spin-slow {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes spin-reverse {
+      from { transform: rotate(360deg); }
+      to { transform: rotate(0deg); }
+    }
+    .ring-spin {
+      animation: spin-slow 16s linear infinite;
+    }
+    .ring-spin-reverse {
+      animation: spin-reverse 10s linear infinite;
+    }
+
+    /* 玻璃拟态卡片 */
+    .hud-glass {
+      background: rgba(11, 18, 33, 0.65);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    /* 迷你声波跳动 */
+    @keyframes eq-bar {
+      0%, 100% { height: 4px; }
+      50% { height: 18px; }
+    }
+    .eq-active .bar-1 { animation: eq-bar 0.55s infinite ease-in-out 0.0s; }
+    .eq-active .bar-2 { animation: eq-bar 0.45s infinite ease-in-out 0.15s; }
+    .eq-active .bar-3 { animation: eq-bar 0.65s infinite ease-in-out 0.3s; }
+    .eq-active .bar-4 { animation: eq-bar 0.50s infinite ease-in-out 0.1s; }
+    .eq-active .bar-5 { animation: eq-bar 0.60s infinite ease-in-out 0.25s; }
+
+    /* 主按住按钮效果 */
+    .ptt-btn {
+      background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.14), rgba(15, 23, 42, 0.9));
+      border: 1.5px solid rgba(0, 240, 255, 0.45);
+      box-shadow:
+        0 0 25px rgba(0, 240, 255, 0.2),
+        inset 0 0 18px rgba(0, 240, 255, 0.15);
+      transition: all 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .ptt-btn.listening {
+      transform: scale(0.93);
+      border-color: rgba(255, 42, 122, 0.9);
+      background: radial-gradient(circle at 50% 50%, rgba(255, 42, 122, 0.35), rgba(20, 10, 25, 0.95));
+      box-shadow:
+        0 0 42px rgba(255, 42, 122, 0.55),
+        inset 0 0 24px rgba(255, 42, 122, 0.4);
+    }
+
+    .ptt-btn.processing {
+      border-color: rgba(139, 92, 246, 0.8);
+      box-shadow: 0 0 32px rgba(139, 92, 246, 0.45);
+    }
+  </style>
+</head>
+<body class="px-5 pt-6 pb-8">
+<!-- 顶部 HUD 导航栏 -->
+  <header class="w-full max-w-md mx-auto flex items-center justify-between z-10">
+    <div class="flex items-center gap-2.5">
+      <div class="relative flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-400/30">
+        <span id="statusDot" class="status-dot w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#00f0ff]"></span>
+      </div>
+      <div>
+        <div class="flex items-center gap-1.5">
+          <h1 class="text-base font-bold tracking-wider text-white">凯莉 · KYLIE</h1>
+          <span class="mono text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-400/25">v2.6</span>
+        </div>
+        <p id="subStatusText" class="mono text-[11px] text-slate-400 tracking-wide">HERMES NEURAL LINK // READY</p>
+      </div>
+    </div>
+
+    <div class="text-right">
+      <div class="mono text-[10px] text-cyan-400/80 tracking-widest">LOW LATENCY</div>
+      <div id="latencyBadge" class="mono text-xs text-slate-300 font-medium">24 ms</div>
+    </div>
+  </header>
+
+  <!-- 中央全息神经核心画布 -->
+  <main class="relative flex-1 w-full max-w-md mx-auto flex flex-col items-center justify-center my-2">
+    <div class="relative w-72 h-72 flex items-center justify-center">
+      <!-- 外圈全息刻度环 -->
+      <svg class="absolute inset-0 w-full h-full ring-spin opacity-45 pointer-events-none" viewBox="0 0 200 200">
+        <circle cx="100" cy="100" r="94" fill="none" stroke="#00f0ff" stroke-width="0.6" stroke-dasharray="4 8" />
+        <circle cx="100" cy="100" r="86" fill="none" stroke="#8b5cf6" stroke-width="0.8" stroke-dasharray="28 14 4 14" />
+      </svg>
+      <svg class="absolute inset-4 w-[calc(100%-2rem)] h-[calc(100%-2rem)] ring-spin-reverse opacity-35 pointer-events-none" viewBox="0 0 200 200">
+        <circle cx="100" cy="100" r="92" fill="none" stroke="#ff2a7a" stroke-width="0.7" stroke-dasharray="12 24" />
+      </svg>
+
+      <!-- 流体粒子 Canvas -->
+      <canvas id="neuralCanvas" width="320" height="320" class="w-72 h-72"></canvas>
+
+      <!-- 核心中心状态提示 -->
+      <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        <span id="coreModeLabel" class="mono text-[11px] tracking-[0.25em] text-cyan-300/90 uppercase">STANDBY</span>
+      </div>
+    </div>
+
+    <!-- 玻璃拟态实时字幕卡 -->
+    <div class="w-full hud-glass rounded-2xl p-4 mt-2 transition-all duration-300">
+      <div class="flex items-center justify-between mb-2">
+        <span id="speakerTag" class="mono text-[11px] text-cyan-400 tracking-wider">● SYSTEM IDLE</span>
+        <!-- 迷你声波条 -->
+        <div id="miniEq" class="flex items-center gap-1 h-5">
+          <span class="bar-1 w-0.5 h-1.5 bg-cyan-400 rounded-full"></span>
+          <span class="bar-2 w-0.5 h-2.5 bg-cyan-400 rounded-full"></span>
+          <span class="bar-3 w-0.5 h-1.5 bg-cyan-400 rounded-full"></span>
+          <span class="bar-4 w-0.5 h-3 bg-cyan-400 rounded-full"></span>
+          <span class="bar-5 w-0.5 h-1.5 bg-cyan-400 rounded-full"></span>
+        </div>
+      </div>
+      <p id="transcriptText" class="text-sm text-slate-200 leading-relaxed min-h-[44px] max-h-[88px] overflow-y-auto">
+        按住下方神经触控键说话，松开后凯莉将实时为你语音响应。
+      </p>
+    </div>
+  </main>
+
+  <!-- 底部赛博触控台 -->
+  <footer class="w-full max-w-md mx-auto flex flex-col items-center z-10">
+    <div class="w-full flex items-center justify-around px-2">
+      <!-- 左侧：连续对话开关 -->
+      <button id="autoModeBtn" type="button" class="flex flex-col items-center gap-1.5 text-slate-400 hover:text-cyan-300 transition active:scale-95">
+        <div id="autoModeIcon" class="w-11 h-11 rounded-full hud-glass flex items-center justify-center border border-white/10">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </div>
+        <span class="text-[11px] tracking-wider">免提连麦</span>
+      </button>
+
+      <!-- 中央：按住说话主按钮 -->
+      <div class="relative flex items-center justify-center">
+        <div id="btnHalo" class="absolute -inset-2.5 rounded-full border border-dashed border-cyan-400/35 ring-spin pointer-events-none"></div>
+        <button
+          id="pttButton"
+          type="button"
+          class="ptt-btn relative w-24 h-24 rounded-full flex flex-col items-center justify-center cursor-pointer touch-none"
+        >
+          <svg id="micIcon" class="w-7 h-7 text-cyan-300 mb-1 transition-colors" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+          </svg>
+          <span id="btnLabel" class="text-[11px] font-medium tracking-widest text-slate-200">按住说话</span>
+        </button>
+      </div>
+
+      <!-- 右侧：清空屏幕 -->
+      <button id="clearBtn" type="button" class="flex flex-col items-center gap-1.5 text-slate-400 hover:text-rose-300 transition active:scale-95">
+        <div class="w-11 h-11 rounded-full hud-glass flex items-center justify-center border border-white/10">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </div>
+        <span class="text-[11px] tracking-wider">清空记录</span>
+      </button>
+    </div>
+
+    <p id="hintFooter" class="mono text-[10px] text-slate-500 mt-4 tracking-widest">
+      HOLD TO TRANSMIT · RELEASE TO RECEIVE
+    </p>
+  </footer>
+
+  <script>
+    /**
+     * ==========================================
+     * 1. 全息神经球 Canvas 粒子与流体波纹引擎
+     * ==========================================
+     */
+    const canvas = document.getElementById('neuralCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+    const CX = W / 2;
+    const CY = H / 2;
+
+    // 当前状态: 'idle' | 'listening' | 'processing' | 'speaking'
+    let appState = 'idle';
+    let phase = 0;
+
+    // 状态配色与振幅配置
+    const STATE_CONFIG = {
+      idle:       { color: [0, 240, 255],   amp: 4,  speed: 0.03, radius: 66 },
+      listening:  { color: [255, 42, 122],  amp: 16, speed: 0.11, radius: 74 },
+      processing: { color: [139, 92, 246],  amp: 9,  speed: 0.14, radius: 68 },
+      speaking:   { color: [0, 240, 255],   amp: 14, speed: 0.09, radius: 72 }
+    };
+
+    // 环绕粒子
+    const particles = Array.from({ length: 42 }, (_, i) => ({
+      angle: (Math.PI * 2 * i) / 42,
+      dist: 82 + Math.random() * 28,
+      size: 1 + Math.random() * 1.8,
+      speed: (0.004 + Math.random() * 0.008) * (i % 2 === 0 ? 1 : -1)
+    }));
+
+    function drawNeuralOrb() {
+      ctx.clearRect(0, 0, W, H);
+      const cfg = STATE_CONFIG[appState];
+      const [r, g, b] = cfg.color;
+      phase += cfg.speed;
+
+      // 1. 中心径向光晕
+      const grad = ctx.createRadialGradient(CX, CY, 10, CX, CY, 115);
+      grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.28)`);
+      grad.addColorStop(0.6, `rgba(${r}, ${g}, ${b}, 0.06)`);
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(CX, CY, 115, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2. 三层正弦流体声波环
+      for (let layer = 0; layer < 3; layer++) {
+        ctx.beginPath();
+        const points = 120;
+        for (let i = 0; i <= points; i++) {
+          const theta = (i / points) * Math.PI * 2;
+          const wave1 = Math.sin(theta * (4 + layer) + phase * (layer + 1.2));
+          const wave2 = Math.cos(theta * 3 - phase * 1.5);
+          const offset = (wave1 + wave2) * 0.5 * cfg.amp;
+          const rad = cfg.radius + offset + layer * 4;
+          const x = CX + Math.cos(theta) * rad;
+          const y = CY + Math.sin(theta) * rad;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${0.75 - layer * 0.22})`;
+        ctx.lineWidth = 2 - layer * 0.4;
+        ctx.stroke();
+      }
+
+      // 3. 量子轨道微粒
+      particles.forEach((p, idx) => {
+        p.angle += p.speed * (appState === 'listening' ? 2.5 : 1);
+        const dynamicDist = p.dist + Math.sin(phase + idx) * (appState === 'listening' ? 10 : 3);
+        const px = CX + Math.cos(p.angle) * dynamicDist;
+        const py = CY + Math.sin(p.angle) * dynamicDist;
+
+        ctx.beginPath();
+        ctx.arc(px, py, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.65)`;
+        ctx.fill();
+      });
+
+      requestAnimationFrame(drawNeuralOrb);
+    }
+    drawNeuralOrb();
+
+    /**
+     * ==========================================
+     * 2. UI 状态控制与交互接口（供凯莉接入后端）
+     * ==========================================
+     */
+    const pttButton = document.getElementById('pttButton');
+    const btnLabel = document.getElementById('btnLabel');
+    const micIcon = document.getElementById('micIcon');
+    const btnHalo = document.getElementById('btnHalo');
+    const statusDot = document.getElementById('statusDot');
+    const subStatusText = document.getElementById('subStatusText');
+    const coreModeLabel = document.getElementById('coreModeLabel');
+    const speakerTag = document.getElementById('speakerTag');
+    const transcriptText = document.getElementById('transcriptText');
+    const miniEq = document.getElementById('miniEq');
+    const autoModeBtn = document.getElementById('autoModeBtn');
+    const autoModeIcon = document.getElementById('autoModeIcon');
+    const clearBtn = document.getElementById('clearBtn');
+
+    let isAutoMode = false;
+    let demoTimer = null;
+
+    // 外部可调用的状态切换方法
+    function setState(newState) {
+      appState = newState;
+      pttButton.classList.remove('listening', 'processing');
+      miniEq.classList.remove('eq-active');
+
+      if (newState === 'idle') {
+        btnLabel.textContent = isAutoMode ? '正在监听' : '按住说话';
+        micIcon.className = 'w-7 h-7 text-cyan-300 mb-1 transition-colors';
+        btnHalo.style.borderColor = 'rgba(0, 240, 255, 0.35)';
+        statusDot.className = 'status-dot w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#00f0ff]';
+        subStatusText.textContent = 'HERMES NEURAL LINK // READY';
+        coreModeLabel.textContent = 'STANDBY';
+        coreModeLabel.className = 'mono text-[11px] tracking-[0.25em] text-cyan-300/90 uppercase';
+        speakerTag.textContent = '● SYSTEM IDLE';
+        speakerTag.className = 'mono text-[11px] text-cyan-400 tracking-wider';
+      } else if (newState === 'listening') {
+        pttButton.classList.add('listening');
+        miniEq.classList.add('eq-active');
+        btnLabel.textContent = '松开结束';
+        micIcon.className = 'w-7 h-7 text-rose-400 mb-1 transition-colors';
+        btnHalo.style.borderColor = 'rgba(255, 42, 122, 0.75)';
+        statusDot.className = 'status-dot w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_10px_#ff2a7a]';
+        subStatusText.textContent = 'AUDIO STREAM // CAPTURING';
+        coreModeLabel.textContent = 'LISTENING';
+        coreModeLabel.className = 'mono text-[11px] tracking-[0.25em] text-rose-400 uppercase';
+        speakerTag.textContent = '● USER VOICE INPUT';
+        speakerTag.className = 'mono text-[11px] text-rose-400 tracking-wider';
+      } else if (newState === 'processing') {
+        pttButton.classList.add('processing');
+        btnLabel.textContent = '思考中...';
+        micIcon.className = 'w-7 h-7 text-violet-400 mb-1 transition-colors';
+        statusDot.className = 'status-dot w-2.5 h-2.5 rounded-full bg-violet-400 shadow-[0_0_10px_#8b5cf6]';
+        subStatusText.textContent = 'HERMES CORE // THINKING';
+        coreModeLabel.textContent = 'PROCESSING';
+        coreModeLabel.className = 'mono text-[11px] tracking-[0.25em] text-violet-400 uppercase';
+        speakerTag.textContent = '● NEURAL COMPUTING';
+        speakerTag.className = 'mono text-[11px] text-violet-400 tracking-wider';
+      } else if (newState === 'speaking') {
+        miniEq.classList.add('eq-active');
+        btnLabel.textContent = '凯莉回复中';
+        statusDot.className = 'status-dot w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#00f0ff]';
+        subStatusText.textContent = 'VOICE SYNTHESIS // ACTIVE';
+        coreModeLabel.textContent = 'SPEAKING';
+        coreModeLabel.className = 'mono text-[11px] tracking-[0.25em] text-cyan-300 uppercase';
+        speakerTag.textContent = '● KYLIE RESPONSE';
+        speakerTag.className = 'mono text-[11px] text-cyan-300 tracking-wider';
+      }
+    }
+
+    // 打字机流式更新字幕方法
+    function setTranscript(text, typewriter = false) {
+      clearInterval(demoTimer);
+      if (!typewriter) {
+        transcriptText.textContent = text;
+        return;
+      }
+      transcriptText.textContent = '';
+      let idx = 0;
+      demoTimer = setInterval(() => {
+        transcriptText.textContent += text[idx] || '';
+        idx++;
+        if (idx >= text.length) clearInterval(demoTimer);
+      }, 28);
+    }
+
+    /**
+     * ==========================================
+     * 3. 触控事件绑定（凯莉挂载录音逻辑）
+     * ==========================================
+     */
+    const API = 'https://similarly-producing-shot-producing.trycloudflare.com';
+    let mediaRecorder = null, chunks = [], stream = null;
+
+    async function startRecording() {
+      chunks = [];
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      } catch(e) {
+        setTranscript('需要麦克风权限：' + e.message);
+        setState('idle');
+        return;
+      }
+      const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
+      mediaRecorder = new MediaRecorder(stream, {mimeType:mime});
+      mediaRecorder.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+      mediaRecorder.start();
+    }
+
+    async function stopRecordingAndSend() {
+      if (!mediaRecorder) { setState('idle'); return; }
+      const blob = await new Promise(resolve => {
+        mediaRecorder.onstop = () => resolve(new Blob(chunks, {type:mediaRecorder.mimeType}));
+        mediaRecorder.stop();
+      });
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      if (!blob.size) { setState('idle'); setTranscript('没听到声音，再试一次？'); return; }
+
+      const fd = new FormData();
+      const ext = blob.type.includes('ogg') ? 'ogg' : 'webm';
+      fd.append('file', blob, 'voice.' + ext);
+      try {
+        const t0 = performance.now();
+        const res = await fetch(API + '/voice', {method:'POST', body:fd});
+        const data = await res.json();
+        const dt = performance.now() - t0;
+        const badge = document.getElementById('latencyBadge');
+        if (badge) badge.textContent = dt < 1000 ? Math.round(dt) + ' ms' : (dt/1000).toFixed(1) + ' s';
+        if (data.error) { setTranscript('⚠️ ' + data.error); setState('idle'); return; }
+        setTranscript(data.reply, true);
+        setState('speaking');
+        playAudio(API + data.audio_url);
+      } catch(e) {
+        setTranscript('连接失败：' + e.message);
+        setState('idle');
+      }
+    }
+
+    function playAudio(url) {
+      const audio = new Audio(url);
+      audio.onended = () => setState('idle');
+      audio.play().catch(() => {
+        setTranscript('点一下屏幕播放语音');
+        const tap = () => { audio.play(); document.removeEventListener('touchstart', tap); };
+        document.addEventListener('touchstart', tap, {once:true});
+      });
+    }
+
+    function handlePressStart(e) {
+      e.preventDefault();
+      if (navigator.vibrate) navigator.vibrate(25);
+      setState('listening');
+      setTranscript('正在聆听你的指令...');
+      startRecording();
+    }
+
+    function handlePressEnd(e) {
+      e.preventDefault();
+      if (appState !== 'listening') return;
+      if (navigator.vibrate) navigator.vibrate(15);
+      setState('processing');
+      setTranscript('语音指令已发送，凯莉正在解析...');
+      stopRecordingAndSend();
+    }
+
+    pttButton.addEventListener('pointerdown', handlePressStart);
+    pttButton.addEventListener('pointerup', handlePressEnd);
+    pttButton.addEventListener('pointercancel', handlePressEnd);
+
+    // 连续对话模式切换
+    autoModeBtn.addEventListener('click', () => {
+      isAutoMode = !isAutoMode;
+      if (isAutoMode) {
+        autoModeIcon.classList.add('border-cyan-400', 'text-cyan-300', 'bg-cyan-500/15');
+        setTranscript('已开启「免提连麦」模式，可直接连续语音对话。');
+      } else {
+        autoModeIcon.classList.remove('border-cyan-400', 'text-cyan-300', 'bg-cyan-500/15');
+        setTranscript('已切回「按住说话」精准触控模式。');
+      }
+      if (appState === 'idle') setState('idle');
+    });
+
+    // 清空记录
+    clearBtn.addEventListener('click', () => {
+      if (navigator.vibrate) navigator.vibrate(15);
+      setState('idle');
+      setTranscript('屏幕已重置，按住下方按钮随时开始对话。');
+    });
+  </script>
+</body>
+</html>
