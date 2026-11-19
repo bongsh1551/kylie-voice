@@ -415,7 +415,9 @@
      * 3. 触控事件绑定（凯莉挂载录音逻辑）
      * ==========================================
      */
-    const API = 'https://lesser-complications-weighted-delayed.trycloudflare.com';
+    const API = (location.protocol.startsWith('http') && location.hostname.includes('trycloudflare.com'))
+      ? location.origin
+      : 'https://brands-reliability-impose-applies.trycloudflare.com';
     let mediaRecorder = null, chunks = [], stream = null;
 
     async function startRecording() {
